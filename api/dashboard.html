@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Realtime Feature Pipeline</title>
+<style>
+  :root { --bg:#0b0f14; --panel:#121821; --line:#1f2a37; --text:#e6edf3; --muted:#8b98a5; --accent:#2dd4bf; --warn:#f59e0b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:960px; margin:0 auto; padding:24px 16px; display:flex; flex-direction:column; gap:16px; }
+  header h1 { margin:0; font-size:20px; } header p { margin:4px 0 0; color:var(--muted); }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  input { background:var(--panel); border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:6px; min-width:200px; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--line); padding:8px 12px; border-radius:6px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#04201c; border-color:var(--accent); font-weight:600; }
+  button.warn { border-color:var(--warn); color:var(--warn); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+  .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .value { font:600 24px/1.2 ui-monospace,monospace; margin-top:4px; }
+  .big { font-size:40px; color:var(--accent); }
+  pre { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; color:var(--muted); }
+  #status { color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Realtime Feature Pipeline</h1>
+    <p>Polls <code>/predict/{user_id}</code> every second. Kinesis &rarr; Lambda &rarr; DynamoDB &rarr; FastAPI.</p>
+  </header>
+
+  <div class="row">
+    <label for="uid" class="label">User ID</label>
+    <input id="uid" value="demo-user-1" autocomplete="off">
+    <button class="primary" id="burst">Send 50-event burst</button>
+    <button class="warn" id="poison">Inject poison pill</button>
+    <span id="status" role="status" aria-live="polite"></span>
+  </div>
+
+  <section class="grid" aria-label="Prediction metrics">
+    <div class="card"><div class="label">Purchase probability</div><div class="value big" id="prob">-</div></div>
+    <div class="card"><div class="label">Inference latency</div><div class="value" id="lat">-</div></div>
+    <div class="card"><div class="label">Feature freshness</div><div class="value" id="fresh">-</div></div>
+    <div class="card"><div class="label">Events (5m)</div><div class="value" id="events">-</div></div>
+    <div class="card"><div class="label">CTR (5m)</div><div class="value" id="ctr">-</div></div>
+    <div class="card"><div class="label">Recency</div><div class="value" id="recency">-</div></div>
+  </section>
+
+  <pre id="raw" aria-label="Raw response">waiting...</pre>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const uid = () => encodeURIComponent($("uid").value.trim() || "demo-user-1");
+  const fmt = (v, unit = "") => (v === null || v === undefined ? "-" : `${v}${unit}`);
+
+  async function poll() {
+    try {
+      const res = await fetch(`/predict/${uid()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(data.detail ?? data));
+      const f = data.features;
+      $("prob").textContent = (data.purchase_probability * 100).toFixed(2) + "%";
+      $("lat").textContent = fmt(data.inference_latency_ms.toFixed(1), " ms");
+      $("fresh").textContent = fmt(data.feature_freshness_ms, " ms");
+      $("events").textContent = f.total_events_5m;
+      $("ctr").textContent = f.ctr_5m.toFixed(3);
+      $("recency").textContent = f.recency_sec === null ? "-" : `${Math.round(f.recency_sec)} s`;
+      $("raw").textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      $("raw").textContent = `Error: ${err.message}`;
+    } finally {
+      setTimeout(poll, 1000);
+    }
+  }
+
+  async function post(path, label) {
+    $("status").textContent = `${label}...`;
+    try {
+      const res = await fetch(path, { method: "POST" });
+      const data = await res.json();
+      $("status").textContent = res.ok ? `${label}: ${JSON.stringify(data)}` : `${label} failed: ${data.detail}`;
+    } catch (err) {
+      $("status").textContent = `${label} failed: ${err.message}`;
+    }
+  }
+
+  $("burst").addEventListener("click", () => post(`/demo/burst/${uid()}?count=50`, "Burst"));
+  $("poison").addEventListener("click", () => post(`/demo/poison/${uid()}`, "Poison pill"));
+  poll();
+</script>
+</body>
+</html>

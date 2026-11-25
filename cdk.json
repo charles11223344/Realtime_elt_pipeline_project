@@ -1,0 +1,7 @@
+{
+  "app": "python3 infra/app.py",
+  "watch": {
+    "include": ["infra/**", "lambda_fn/**", "shared/**"]
+  },
+  "context": {}
+}
