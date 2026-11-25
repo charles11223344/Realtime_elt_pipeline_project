@@ -1,0 +1,10 @@
+-r requirements.txt
+# Testing
+pytest>=8
+httpx>=0.27
+# Training
+numpy>=1.26
+scikit-learn>=1.4
+# Infrastructure (also requires the AWS CDK CLI: npm install -g aws-cdk)
+aws-cdk-lib>=2.140
+constructs>=10
